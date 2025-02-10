@@ -4,3 +4,4 @@ __pycache__
 chroma_db
 .gradio
 crawl4AI-agent/.streamlit/secrets.toml
+.streamlit/secrets.toml
