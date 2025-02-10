@@ -3,6 +3,10 @@ from typing import Literal, TypedDict
 import asyncio
 import os
 
+def load_css(file_name: str):
+    with open(file_name) as f:
+        st.markdown(f"<style>{f.read()}</style>", unsafe_allow_html=True)
+
 import streamlit as st
 import json
 import logfire
@@ -105,8 +109,11 @@ async def run_agent_with_streaming(user_input: str):
 
 
 async def main():
-    st.title("Pydantic AI Agentic RAG")
-    st.write("Ask any question about Pydantic AI, the hidden truths of the beauty of this framework lie within.")
+    st.title("Velkommen til Lægehåndbogens AI-assistent")
+    st.write("Du kan stille mig spørgsmål om sygdomme og behandlinger, og jeg vil forsøge at hjælpe dig, og give referencer til supplerende viden.")
+
+    # Load custom CSS
+    load_css("styles.css")
 
     # Initialize chat history in session state if not present
     if "messages" not in st.session_state:
@@ -121,7 +128,7 @@ async def main():
                 display_message_part(part)
 
     # Chat input for the user
-    user_input = st.chat_input("What questions do you have about Pydantic AI?")
+    user_input = st.chat_input("Hvad kunne du godt tænke dig at vide?")
 
     if user_input:
         # We append a new request to the conversation explicitly
