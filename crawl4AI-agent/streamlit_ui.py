@@ -2,10 +2,13 @@ from __future__ import annotations
 from typing import Literal, TypedDict
 import asyncio
 import os
+import uuid
+
 
 def load_css(file_name: str):
     with open(file_name) as f:
         st.markdown(f"<style>{f.read()}</style>", unsafe_allow_html=True)
+
 
 import streamlit as st
 import json
@@ -30,6 +33,7 @@ from pydantic_ai_expert import get_agent, PydanticAIDeps, SYSTEM_PROMPTS
 
 # Load environment variables
 from dotenv import load_dotenv
+
 load_dotenv()
 
 openai_client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
@@ -40,6 +44,7 @@ supabase: Client = Client(
 
 # Configure logfire to suppress warnings (optional)
 logfire.configure(send_to_logfire='never')
+
 
 class ChatMessage(TypedDict):
     """Format of messages sent to the browser/API."""
@@ -66,10 +71,11 @@ def display_message_part(part):
     # text
     elif part.part_kind == 'text':
         with st.chat_message("assistant"):
-            st.markdown(part.content)          
+            st.markdown(part.content)
+
+        # async def run_agent_with_streaming(user_input: str):
 
 
-# async def run_agent_with_streaming(user_input: str):
 #     """
 #     Run the agent with streaming text for the user_input prompt,
 #     while maintaining the entire conversation in `st.session_state.messages`.
@@ -155,6 +161,7 @@ def display_message_part(part):
 # Update the import statement
 from pydantic_ai_expert import get_agent, PydanticAIDeps, SYSTEM_PROMPTS
 
+
 # Then modify the run_agent_with_streaming function
 async def run_agent_with_streaming(user_input: str, system_prompt_key: str):
     """
@@ -196,6 +203,92 @@ async def run_agent_with_streaming(user_input: str, system_prompt_key: str):
         st.session_state.messages.append(
             ModelResponse(parts=[TextPart(content=partial_text)])
         )
+
+import json
+import uuid
+from fastapi.encoders import jsonable_encoder
+
+
+def save_conversation():
+    # Ensure conversation_id is initialized
+    if "conversation_id" not in st.session_state or not st.session_state.conversation_id:
+        st.session_state.conversation_id = str(uuid.uuid4())  # Ensure we always have an ID
+
+    if not st.session_state.messages:
+        return
+
+    # Extract title from the first message
+    first_message = st.session_state.messages[0]
+    title = (
+        first_message.parts[0].content[:50]
+        if first_message.parts and hasattr(first_message.parts[0], "content")
+        else "New Conversation"
+    )
+
+    # Serialize messages to JSON
+    serialized_messages = jsonable_encoder(st.session_state.messages)
+
+    # Filter the serialized messages to include 'text' AND 'user_prompt' parts
+    filtered_messages = []
+    for msg in serialized_messages:
+        # Filter out parts where part_kind is not 'text' or 'user_prompt'
+        filtered_parts = [part for part in msg.get('parts', [])
+                          if part.get('part_kind') in ['text', 'user-prompt']]
+
+        # Only include messages that have parts after filtering
+        if filtered_parts:
+            msg['parts'] = filtered_parts
+            filtered_messages.append(msg)
+
+    # Save conversation in Supabase
+    supabase.table("conversations").upsert({
+        "id": st.session_state.conversation_id,  # Ensure UUID is set
+        "title": title,
+        "messages": json.dumps(filtered_messages)
+    }).execute()
+
+
+def load_conversation(conversation_id):
+    response = supabase.table("conversations").select("messages").eq("id", conversation_id).execute()
+    if response.data:
+        raw_messages = json.loads(response.data[0]["messages"])
+
+        # Reset messages
+        st.session_state.messages = []
+
+        # Reconstruct message objects from JSON data
+        for msg in raw_messages:
+            kind = msg.get("kind")
+            parts_data = msg.get("parts", [])
+
+            # Reconstruct parts objects
+            parts = []
+            for part_data in parts_data:
+                part_kind = part_data.get("part_kind")
+                content = part_data.get("content", "")
+
+                if part_kind == "user-prompt":
+                    parts.append(UserPromptPart(content=content))
+                elif part_kind == "text":
+                    parts.append(TextPart(content=content))
+                elif part_kind == "retry-prompt":
+                    parts.append(RetryPromptPart(content=content))
+
+            # Create appropriate message object
+            if kind == "request":
+                st.session_state.messages.append(ModelRequest(parts=parts))
+            elif kind == "response":
+                st.session_state.messages.append(ModelResponse(parts=parts))
+            # Add other message types if needed
+
+        # Set conversation ID
+        st.session_state.conversation_id = conversation_id
+        st.rerun()
+
+def list_conversations():
+    response = supabase.table("conversations").select("id", "title", "created_at").order("created_at",
+                                                                                         desc=True).execute()
+    return response.data if response.data else []
 
 
 # async def main():
@@ -302,7 +395,8 @@ async def main():
     # Display a description of the selected role
     st.sidebar.markdown(f"**Valgt rolle:** {system_prompt_key}")
 
-    st.write("Du kan stille mig spørgsmål om sygdomme og behandlinger, og jeg vil forsøge at hjælpe dig, og give referencer til supplerende viden.")
+    st.write(
+        "Du kan stille mig spørgsmål om sygdomme og behandlinger, og jeg vil forsøge at hjælpe dig, og give referencer til supplerende viden.")
 
     # Load custom CSS
     load_css("styles.css")
@@ -343,7 +437,22 @@ async def main():
         with st.chat_message("assistant"):
             # Actually run the agent now, streaming the text
             await run_agent_with_streaming(user_input, system_prompt_key)
+            save_conversation()
+
+    # Sidebar UI
+    st.sidebar.header("Tidligere samtaler")
+    conversations = list_conversations()
+
+    for convo in conversations:
+        if st.sidebar.button(convo["title"], key=convo["id"]):
+            load_conversation(convo["id"])
+
+    # Button to start a new chat
+    if st.sidebar.button("Start ny samtale"):
+        st.session_state.messages = []
+        st.session_state.conversation_id = None
+        st.rerun()
+
 
 if __name__ == "__main__":
     asyncio.run(main())
-
