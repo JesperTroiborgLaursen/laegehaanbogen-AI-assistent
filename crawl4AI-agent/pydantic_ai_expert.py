@@ -1,5 +1,6 @@
 from __future__ import annotations as _annotations
 
+import json
 from dataclasses import dataclass
 from dotenv import load_dotenv
 import logfire
@@ -59,6 +60,7 @@ async def get_embedding(text: str, openai_client: AsyncOpenAI) -> List[float]:
         print(f"Error getting embedding: {e}")
         return [0] * 1536  # Return zero vector on error
 
+
 @pydantic_ai_expert.tool
 async def retrieve_relevant_documentation(ctx: RunContext[PydanticAIDeps], user_query: str) -> str:
     """
@@ -74,23 +76,24 @@ async def retrieve_relevant_documentation(ctx: RunContext[PydanticAIDeps], user_
     try:
         # Get the embedding for the query
         query_embedding = await get_embedding(user_query, ctx.deps.openai_client)
-        
+
+        query_keywords = await extract_keywords(user_query, ctx.deps.openai_client)
+
         # Query Supabase for relevant documents
-        
-        #TODO: Den bruger en sql function til at matche pages. Fordi den gør det med metadata, så kan den ikke finde ud af at finde de rigtige pages. Der er alt for mange pages til, at den finder de rigtige
-        #hvad er Nekrotiserende fasciitis? virker PT
         result = ctx.deps.supabase.rpc(
-            'match_site_pages',
+            'match_site_pages_keywords',
             {
                 'query_embedding': query_embedding,
-                'match_count': 10,
+                'query_keywords': query_keywords,  # Pass extracted keywords
+                'match_count': 10,  # Ensure match_count is first
             }
         ).execute()
-        
-        print(result.data)
+        for doc in result.data:
+            print(f"Document: {doc['title']} - Score: {doc['similarity']} - Url: {doc['url']}")
+            
         if not result.data:
             return "No relevant documentation found."
-            
+
         # Format the results
         formatted_chunks = []
         for doc in result.data:
@@ -100,13 +103,57 @@ async def retrieve_relevant_documentation(ctx: RunContext[PydanticAIDeps], user_
 {doc['content']}
 """
             formatted_chunks.append(chunk_text)
-            
+
         # Join all chunks with a separator
         return "\n\n---\n\n".join(formatted_chunks)
-        
+
     except Exception as e:
         print(f"Error retrieving documentation: {e}")
         return f"Error retrieving documentation: {str(e)}"
+
+
+async def extract_keywords(query: str, openai_client: AsyncOpenAI) -> List[str]:
+    """
+    Uses OpenAI to extract 1-5 relevant medical terms (illnesses, procedures, medical concepts)
+    from the user's query.
+
+    Args:
+        query (str): The user's query
+        openai_client (AsyncOpenAI): The OpenAI client instance
+
+    Returns:
+        List[str]: A list of extracted medical keywords (1-5 terms)
+    """
+
+    try:
+        response = await openai_client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {
+                    "role": "system",
+                    "content": "You are a medical terminology expert. Extract 1-5 key medical terms (illnesses, procedures, diseases, medical conditions) from the following query. Always add abbreviations or full length words in Danish if any possible. Respond with a JSON list of words only."
+                },
+                {
+                    "role": "user",
+                    "content": query
+                }
+            ],
+            response_format={"type": "json_object"},
+            temperature=0  # More deterministic results
+        )
+        # Parse OpenAI response
+        keywords = response.choices[0].message.content
+        print("Keywords: " + keywords)
+        keywords_data = json.loads(keywords)
+        query_keywords = keywords_data.get("key_terms", [])
+        for doc in query_keywords:
+            print(f"query_keywords: {doc}")
+        return query_keywords if isinstance(query_keywords, list) else []
+
+    except Exception as e:
+        print(f"Error extracting keywords: {e}")
+        return []
+
 
 @pydantic_ai_expert.tool
 async def list_documentation_pages(ctx: RunContext[PydanticAIDeps]) -> List[str]:
@@ -118,24 +165,21 @@ async def list_documentation_pages(ctx: RunContext[PydanticAIDeps]) -> List[str]
     """
     try:
         # Query Supabase for unique URLs where source is pydantic_ai_docs
-        # TODO: Noget er galt, den tjekker på source, men eftersom alle source er sundhed_dk_laegehaandbog, så returnerer 
-        # den alt for mange, og kan ikke finde ud af
         result = ctx.deps.supabase.from_('site_pages') \
             .select('url') \
             .eq('metadata->>source', 'sundhed_dk_laegehaandbog') \
             .execute()
-        print(result)
-        
         if not result.data:
             return []
-            
+
         # Extract unique URLs
         urls = sorted(set(doc['url'] for doc in result.data))
         return urls
-        
+
     except Exception as e:
         print(f"Error retrieving documentation pages: {e}")
         return []
+
 
 @pydantic_ai_expert.tool
 async def get_page_content(ctx: RunContext[PydanticAIDeps], url: str) -> str:
@@ -157,21 +201,21 @@ async def get_page_content(ctx: RunContext[PydanticAIDeps], url: str) -> str:
             .eq('metadata->>source', 'sundhed_dk_laegehaandbog') \
             .order('chunk_number') \
             .execute()
-        
+
         if not result.data:
             return f"No content found for URL: {url}"
-            
+
         # Format the page with its title and all chunks
         page_title = result.data[0]['title'].split(' - ')[0]  # Get the main title
         formatted_content = [f"# {page_title}\n"]
-        
+
         # Add each chunk's content
         for chunk in result.data:
             formatted_content.append(chunk['content'])
-            
+
         # Join everything together
         return "\n\n".join(formatted_content)
-        
+
     except Exception as e:
         print(f"Error retrieving page content: {e}")
         return f"Error retrieving page content: {str(e)}"

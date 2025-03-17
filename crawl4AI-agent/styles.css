@@ -1,0 +1,30 @@
+/* styles.css */
+.stApp {
+    background-color: #ffffff;
+}
+
+header, stAppHeader, footer {
+    background-color: #f7f7f7;
+}
+
+/*header, .css-1v3fvcr, .css-1v3fvcr footer {*/
+/*    background-color: #f7f7f7;*/
+/*}*/
+
+button {
+    background-color: #1667a2;
+    color: #ffffff;
+}
+
+button:hover {
+    background-color: #b20d1c;
+}
+
+h1, h2, h3, h4, h5, h6, p, span, div {
+    color: #1667a2;
+}
+
+.highlight {
+    background-color: #b20d1c;
+    color: #ffffff;
+}
