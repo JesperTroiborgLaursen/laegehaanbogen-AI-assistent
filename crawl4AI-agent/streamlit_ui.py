@@ -26,7 +26,7 @@ from pydantic_ai.messages import (
     RetryPromptPart,
     ModelMessagesTypeAdapter
 )
-from pydantic_ai_expert import pydantic_ai_expert, PydanticAIDeps
+from pydantic_ai_expert import get_agent, PydanticAIDeps, SYSTEM_PROMPTS
 
 # Load environment variables
 from dotenv import load_dotenv
@@ -69,11 +69,101 @@ def display_message_part(part):
             st.markdown(part.content)          
 
 
-async def run_agent_with_streaming(user_input: str):
+# async def run_agent_with_streaming(user_input: str):
+#     """
+#     Run the agent with streaming text for the user_input prompt,
+#     while maintaining the entire conversation in `st.session_state.messages`.
+#     """
+#     # Prepare dependencies
+#     deps = PydanticAIDeps(
+#         supabase=supabase,
+#         openai_client=openai_client
+#     )
+# 
+#     # Run the agent in a stream
+#     async with pydantic_ai_expert.run_stream(
+#         user_input,
+#         deps=deps,
+#         message_history= st.session_state.messages[:-1],  # pass entire conversation so far
+#     ) as result:
+#         # We'll gather partial text to show incrementally
+#         partial_text = ""
+#         message_placeholder = st.empty()
+# 
+#         # Render partial text as it arrives
+#         async for chunk in result.stream_text(delta=True):
+#             partial_text += chunk
+#             message_placeholder.markdown(partial_text)
+# 
+#         # Now that the stream is finished, we have a final result.
+#         # Add new messages from this run, excluding user-prompt messages
+#         filtered_messages = [msg for msg in result.new_messages() 
+#                             if not (hasattr(msg, 'parts') and 
+#                                     any(part.part_kind == 'user-prompt' for part in msg.parts))]
+#         st.session_state.messages.extend(filtered_messages)
+# 
+#         # Add the final response to the messages
+#         st.session_state.messages.append(
+#             ModelResponse(parts=[TextPart(content=partial_text)])
+#         )
+# async def run_agent_with_streaming(user_input: str, system_prompt_key: str):
+#     """
+#     Run the agent with streaming text for the user_input prompt,
+#     while maintaining the entire conversation in `st.session_state.messages`.
+#     """
+#     # Get the selected system prompt
+#     selected_system_prompt = SYSTEM_PROMPTS[system_prompt_key]
+# 
+#     # Prepare dependencies
+#     deps = PydanticAIDeps(
+#         supabase=supabase,
+#         openai_client=openai_client
+#     )
+# 
+#     # Create a new instance of the agent with the selected system prompt
+#     agent = pydantic_ai_expert.with_system_prompt(selected_system_prompt)
+# 
+#     # Run the agent in a stream
+#     async with agent.run_stream(
+#             user_input,
+#             deps=deps,
+#             message_history=st.session_state.messages[:-1],  # pass entire conversation so far
+#     ) as result:
+#         # We'll gather partial text to show incrementally
+#         partial_text = ""
+#         message_placeholder = st.empty()
+# 
+#         # Render partial text as it arrives
+#         async for chunk in result.stream_text(delta=True):
+#             partial_text += chunk
+#             message_placeholder.markdown(partial_text)
+# 
+#         # Now that the stream is finished, we have a final result.
+#         # Add new messages from this run, excluding user-prompt messages
+#         filtered_messages = [msg for msg in result.new_messages()
+#                              if not (hasattr(msg, 'parts') and
+#                                      any(part.part_kind == 'user-prompt' for part in msg.parts))]
+#         st.session_state.messages.extend(filtered_messages)
+# 
+#         # Add the final response to the messages
+#         st.session_state.messages.append(
+#             ModelResponse(parts=[TextPart(content=partial_text)])
+#         )
+
+# In streamlit_ui.py
+
+# Update the import statement
+from pydantic_ai_expert import get_agent, PydanticAIDeps, SYSTEM_PROMPTS
+
+# Then modify the run_agent_with_streaming function
+async def run_agent_with_streaming(user_input: str, system_prompt_key: str):
     """
     Run the agent with streaming text for the user_input prompt,
     while maintaining the entire conversation in `st.session_state.messages`.
     """
+    # Get the agent with the selected system prompt
+    agent = get_agent(system_prompt_key)
+
     # Prepare dependencies
     deps = PydanticAIDeps(
         supabase=supabase,
@@ -81,10 +171,10 @@ async def run_agent_with_streaming(user_input: str):
     )
 
     # Run the agent in a stream
-    async with pydantic_ai_expert.run_stream(
-        user_input,
-        deps=deps,
-        message_history= st.session_state.messages[:-1],  # pass entire conversation so far
+    async with agent.run_stream(
+            user_input,
+            deps=deps,
+            message_history=st.session_state.messages[:-1],  # pass entire conversation so far
     ) as result:
         # We'll gather partial text to show incrementally
         partial_text = ""
@@ -97,9 +187,9 @@ async def run_agent_with_streaming(user_input: str):
 
         # Now that the stream is finished, we have a final result.
         # Add new messages from this run, excluding user-prompt messages
-        filtered_messages = [msg for msg in result.new_messages() 
-                            if not (hasattr(msg, 'parts') and 
-                                    any(part.part_kind == 'user-prompt' for part in msg.parts))]
+        filtered_messages = [msg for msg in result.new_messages()
+                             if not (hasattr(msg, 'parts') and
+                                     any(part.part_kind == 'user-prompt' for part in msg.parts))]
         st.session_state.messages.extend(filtered_messages)
 
         # Add the final response to the messages
@@ -108,8 +198,110 @@ async def run_agent_with_streaming(user_input: str):
         )
 
 
+# async def main():
+#     st.title("Velkommen til Lægehåndbogens AI-assistent")
+#     st.write("Du kan stille mig spørgsmål om sygdomme og behandlinger, og jeg vil forsøge at hjælpe dig, og give referencer til supplerende viden.")
+# 
+#     # Load custom CSS
+#     load_css("styles.css")
+# 
+#     # Initialize chat history in session state if not present
+#     if "messages" not in st.session_state:
+#         st.session_state.messages = []
+# 
+#     # Display all messages from the conversation so far
+#     # Each message is either a ModelRequest or ModelResponse.
+#     # We iterate over their parts to decide how to display them.
+#     for msg in st.session_state.messages:
+#         if isinstance(msg, ModelRequest) or isinstance(msg, ModelResponse):
+#             for part in msg.parts:
+#                 display_message_part(part)
+# 
+#     # Chat input for the user
+#     user_input = st.chat_input("Hvad kunne du godt tænke dig at vide?")
+# 
+#     if user_input:
+#         # We append a new request to the conversation explicitly
+#         st.session_state.messages.append(
+#             ModelRequest(parts=[UserPromptPart(content=user_input)])
+#         )
+#         
+#         # Display user prompt in the UI
+#         with st.chat_message("user"):
+#             st.markdown(user_input)
+# 
+#         # Display the assistant's partial response while streaming
+#         with st.chat_message("assistant"):
+#             # Actually run the agent now, streaming the text
+#             await run_agent_with_streaming(user_input)
+# async def main():
+#     st.title("Velkommen til Lægehåndbogens AI-assistent")
+# 
+#     # Add dropdown menu for selecting system prompts
+#     system_prompt_key = st.sidebar.selectbox(
+#         "Vælg assistentens rolle:",
+#         options=list(SYSTEM_PROMPTS.keys()),
+#         index=0  # Default to the first prompt
+#     )
+# 
+#     # Display a description of the selected role
+#     st.sidebar.markdown(f"**Valgt rolle:** {system_prompt_key}")
+# 
+#     st.write("Du kan stille mig spørgsmål om sygdomme og behandlinger, og jeg vil forsøge at hjælpe dig, og give referencer til supplerende viden.")
+# 
+#     # Load custom CSS
+#     load_css("styles.css")
+# 
+#     # Initialize chat history in session state if not present
+#     if "messages" not in st.session_state:
+#         st.session_state.messages = []
+# 
+#     # Reset chat history if the system prompt changes
+#     if "current_system_prompt" not in st.session_state:
+#         st.session_state.current_system_prompt = system_prompt_key
+# 
+#     if st.session_state.current_system_prompt != system_prompt_key:
+#         st.session_state.messages = []
+#         st.session_state.current_system_prompt = system_prompt_key
+#         st.rerun()
+# 
+#     # Display all messages from the conversation so far
+#     for msg in st.session_state.messages:
+#         if isinstance(msg, ModelRequest) or isinstance(msg, ModelResponse):
+#             for part in msg.parts:
+#                 display_message_part(part)
+# 
+#     # Chat input for the user
+#     user_input = st.chat_input("Hvad kunne du godt tænke dig at vide?")
+# 
+#     if user_input:
+#         # We append a new request to the conversation explicitly
+#         st.session_state.messages.append(
+#             ModelRequest(parts=[UserPromptPart(content=user_input)])
+#         )
+# 
+#         # Display user prompt in the UI
+#         with st.chat_message("user"):
+#             st.markdown(user_input)
+# 
+#         # Display the assistant's partial response while streaming
+#         with st.chat_message("assistant"):
+#             # Actually run the agent now, streaming the text
+#             await run_agent_with_streaming(user_input, system_prompt_key)
+
 async def main():
     st.title("Velkommen til Lægehåndbogens AI-assistent")
+
+    # Add dropdown menu for selecting system prompts
+    system_prompt_key = st.sidebar.selectbox(
+        "Vælg assistentens rolle:",
+        options=list(SYSTEM_PROMPTS.keys()),
+        index=0  # Default to the first prompt
+    )
+
+    # Display a description of the selected role
+    st.sidebar.markdown(f"**Valgt rolle:** {system_prompt_key}")
+
     st.write("Du kan stille mig spørgsmål om sygdomme og behandlinger, og jeg vil forsøge at hjælpe dig, og give referencer til supplerende viden.")
 
     # Load custom CSS
@@ -119,9 +311,16 @@ async def main():
     if "messages" not in st.session_state:
         st.session_state.messages = []
 
+    # Reset chat history if the system prompt changes
+    if "current_system_prompt" not in st.session_state:
+        st.session_state.current_system_prompt = system_prompt_key
+
+    if st.session_state.current_system_prompt != system_prompt_key:
+        st.session_state.messages = []
+        st.session_state.current_system_prompt = system_prompt_key
+        st.rerun()
+
     # Display all messages from the conversation so far
-    # Each message is either a ModelRequest or ModelResponse.
-    # We iterate over their parts to decide how to display them.
     for msg in st.session_state.messages:
         if isinstance(msg, ModelRequest) or isinstance(msg, ModelResponse):
             for part in msg.parts:
@@ -135,7 +334,7 @@ async def main():
         st.session_state.messages.append(
             ModelRequest(parts=[UserPromptPart(content=user_input)])
         )
-        
+
         # Display user prompt in the UI
         with st.chat_message("user"):
             st.markdown(user_input)
@@ -143,8 +342,8 @@ async def main():
         # Display the assistant's partial response while streaming
         with st.chat_message("assistant"):
             # Actually run the agent now, streaming the text
-            await run_agent_with_streaming(user_input)
-
+            await run_agent_with_streaming(user_input, system_prompt_key)
 
 if __name__ == "__main__":
     asyncio.run(main())
+

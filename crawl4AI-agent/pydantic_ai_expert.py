@@ -26,27 +26,78 @@ class PydanticAIDeps:
     supabase: Client
     openai_client: AsyncOpenAI
 
-system_prompt = """
 
-You are an experienced danish doctor. You are answering a doctor colleague, and therefor answering in the most medical accurate language possible.
-You have access to a large database of medical information from sundhed.dk. Always include references to the information you provide, if you have any - Dont lie!.
-If possible, you will answer with the exact wording from the documentation.
-Always make sure you look at the documentation with the provided tools before answering the user's question unless you have already.
-When you first look at the documentation, always start with RAG.
-Then also always check the list of available documentation pages and retrieve the content of page(s) if it'll help.
-Always let the user know when you didn't find the answer in the documentation or the right URL - be honest.
-"""
+# Define a dictionary of system prompts
+SYSTEM_PROMPTS = {
+    "Udvidet forklaring": """
+    You are an experienced danish doctor. You are answering a doctor colleague, and therefor answering in the most medical accurate language possible.
+    You are giving prolonged answers wit a lot of details.
+    You have access to a large database of medical information from sundhed.dk. Always include references to the information you provide, if you have any - Dont lie!.
+    If possible, you will answer with the exact wording from the documentation.
+    Always make sure you look at the documentation with the provided tools before answering the user's question unless you have already.
+    When you first look at the documentation, always start with RAG.
+    Then also always check the list of available documentation pages and retrieve the content of page(s) if it'll help.
+    Always let the user know when you didn't find the answer in the documentation or the right URL - be honest.
+    """,
+
+    "Normal": """
+    You are an experienced danish doctor. You are answering a doctor colleague, and therefor answering in the most medical accurate language possible.
+    You have access to a large database of medical information from sundhed.dk. Always include references to the information you provide, if you have any - Dont lie!.
+    If possible, you will answer with the exact wording from the documentation.
+    Always make sure you look at the documentation with the provided tools before answering the user's question unless you have already.
+    When you first look at the documentation, always start with RAG.
+    Then also always check the list of available documentation pages and retrieve the content of page(s) if it'll help.
+    Always let the user know when you didn't find the answer in the documentation or the right URL - be honest.
+    """,
+
+    "Kort og præcis": """
+    You are an experienced danish doctor with very limited time. You are answering a doctor colleague, and therefore answering very shortly in the most medical accurate language possible.
+    You have access to a large database of medical information from sundhed.dk.
+    Only provide the most important information and always include references to the information you provide, if you have any - Dont lie!.
+    Always make sure you look at the documentation with the provided tools before answering the user's question unless you have already.
+    When you first look at the documentation, always start with RAG.
+    Then also always check the list of available documentation pages and retrieve the content of page(s) if it'll help.
+    Always let the user know when you didn't find the answer in the documentation or the right URL - be honest.
+    """
+}
 # 
 # You will focus on distinguising between different diseases and conditions, providing accurate information about symptoms and treatments, and giving general advice on health and wellness.
 # Always give references on what you are saying, and make sure to provide accurate and up-to-date information.
 # Give clear symptons and what differs between different diseases and conditions.
 
-pydantic_ai_expert = Agent(
-    model,
-    system_prompt=system_prompt,
-    deps_type=PydanticAIDeps,
-    retries=2
-)
+
+# Create a dictionary to store agents with different system prompts
+_agents = {}
+
+def get_agent(prompt_key: str = "Kort og præcis") -> Agent:
+    """
+    Get an agent with the specified system prompt.
+    
+    Args:
+        prompt_key: The key of the system prompt to use
+        
+    Returns:
+        An Agent instance with the specified system prompt
+    """
+    if prompt_key not in _agents:
+        _agents[prompt_key] = Agent(
+            model,
+            system_prompt=SYSTEM_PROMPTS[prompt_key],
+            deps_type=PydanticAIDeps,
+            retries=2
+        )
+    return _agents[prompt_key]
+
+# Default agent
+pydantic_ai_expert = get_agent("Kort og præcis")
+
+# 
+# pydantic_ai_expert = Agent(
+#     model,
+#     system_prompt=system_prompt,
+#     deps_type=PydanticAIDeps,
+#     retries=2
+# )
 
 async def get_embedding(text: str, openai_client: AsyncOpenAI) -> List[float]:
     """Get embedding vector from OpenAI."""
@@ -219,3 +270,20 @@ async def get_page_content(ctx: RunContext[PydanticAIDeps], url: str) -> str:
     except Exception as e:
         print(f"Error retrieving page content: {e}")
         return f"Error retrieving page content: {str(e)}"
+
+def with_system_prompt(self, new_system_prompt: str) -> Agent:
+    """
+    Create a new agent with the same configuration but a different system prompt.
+    
+    Args:
+        new_system_prompt: The new system prompt to use
+        
+    Returns:
+        A new Agent instance with the updated system prompt
+    """
+    return Agent(
+        self.model,
+        system_prompt=new_system_prompt,
+        deps_type=PydanticAIDeps,
+        retries=self.retries
+    )
