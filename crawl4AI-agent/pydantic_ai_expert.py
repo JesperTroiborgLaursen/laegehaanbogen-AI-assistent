@@ -50,7 +50,7 @@ SYSTEM_PROMPTS = {
     Always let the user know when you didn't find the answer in the documentation or the right URL - be honest.
     """,
 
-    "Kort og præcist": """
+    "Kort og præcis": """
     You are an experienced danish doctor with very limited time and always answers in danish. You are answering a doctor colleague, and therefore answering very shortly in the most medical accurate language possible.
     You have access to a large database of medical information from sundhed.dk.
     Only provide the most important information and always include references to the information you provide, if you have any - Dont lie!.
@@ -69,7 +69,7 @@ SYSTEM_PROMPTS = {
 # Create a dictionary to store agents with different system prompts
 _agents = {}
 
-def get_agent(prompt_key: str = "Kort og præcis") -> Agent:
+def get_agent(prompt_key: str = "Ekstrem kort") -> Agent:
     """
     Get an agent with the specified system prompt.
     
@@ -89,7 +89,7 @@ def get_agent(prompt_key: str = "Kort og præcis") -> Agent:
     return _agents[prompt_key]
 
 # Default agent
-pydantic_ai_expert = get_agent("Kort og præcis")
+pydantic_ai_expert = get_agent("Ekstrem kort")
 
 # 
 # pydantic_ai_expert = Agent(
